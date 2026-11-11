@@ -1,0 +1,538 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pecs-t10-servable-s5 · HVAC benchmark solution</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<style>
+:root {
+  color-scheme: light;
+  --bg: #f6f6f4; --surface: #fcfcfb; --text: #0b0b0b; --text-2: #52514e; --muted: #898781;
+  --grid: #e1e0d9; --axis: #c3c2b7; --band: #f0efec; --accent: #2a78d6; --critical: #d03b3b;
+  --travel: #898781; --wait: #e1e0d9; --break: #c3c2b7; --window: rgba(42, 120, 214, 0.18);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100; --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+  --p1: #9ec5f4; --p2: #2a78d6; --p3: #d03b3b; --unserved: #898781;
+  font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --bg: #121211; --surface: #1a1a19; --text: #f0efec; --text-2: #c3c2b7; --muted: #898781;
+    --grid: #2c2c2a; --axis: #383835; --band: #262624; --accent: #3987e5; --critical: #e66767;
+    --travel: #898781; --wait: #383835; --break: #52514e; --window: rgba(57, 135, 229, 0.28);
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500; --s5: #d55181; --s6: #2a9a2a; --s7: #9085e9; --s8: #e66767;
+    --p1: #184f95; --p2: #3987e5; --p3: #e66767; --unserved: #6f6e69;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); }
+body { font-size: 15px; line-height: 1.45; }
+a { color: var(--accent); }
+.page { max-width: 1280px; margin: 0 auto; padding: 16px; }
+.head h1 { font-size: 1.6rem; margin: 0.2rem 0 0.4rem; overflow-wrap: anywhere; }
+.crumb { margin: 0; }
+.lead { margin: 0.2rem 0; color: var(--text); }
+.quiet { color: var(--text-2); margin: 0.4rem 0; }
+.jump { display: flex; flex-wrap: wrap; gap: 4px 14px; margin: 0.6rem 0 0; }
+section { background: var(--surface); border: 1px solid var(--grid); border-radius: 10px; padding: 14px 16px; margin: 16px 0; min-width: 0; }
+h2 { font-size: 1.15rem; margin: 0 0 0.6rem; }
+.section-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 8px 16px; }
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; }
+.control { display: inline-flex; gap: 6px; align-items: center; color: var(--text-2); }
+select, input[type=checkbox] { accent-color: var(--accent); }
+select { background: var(--surface); color: var(--text); border: 1px solid var(--axis); border-radius: 6px; padding: 3px 6px; font: inherit; }
+.table-wrap { overflow-x: auto; max-width: 100%; }
+table { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+th, td { text-align: left; padding: 5px 8px; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+thead th { color: var(--text-2); font-weight: 600; border-bottom-color: var(--axis); }
+.num { text-align: right; }
+.mapgrid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; }
+.mapcol { min-width: 0; }
+.map-host { height: 560px; border-radius: 8px; border: 1px solid var(--grid); background: var(--band); }
+.map-host.static svg { width: 100%; height: 100%; display: block; }
+.notice { background: var(--band); border-left: 3px solid var(--accent); padding: 6px 10px; margin: 0 0 8px; color: var(--text-2); }
+.details { min-width: 0; max-height: 620px; overflow: auto; }
+.details h3 { margin: 0 0 6px; font-size: 1.05rem; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 12px; margin: 0; }
+.kv dt { color: var(--text-2); }
+.kv dd { margin: 0; overflow-wrap: anywhere; }
+.legend { display: flex; flex-wrap: wrap; gap: 4px 14px; margin-top: 8px; color: var(--text-2); font-size: 0.9rem; }
+.swatch { display: inline-block; width: 11px; height: 11px; border-radius: 50%; margin-right: 5px; vertical-align: -1px; border: 1px solid var(--axis); }
+.swatch.bar { border-radius: 2px; width: 18px; }
+.gantt-wrap { overflow-x: auto; max-width: 100%; border: 1px solid var(--grid); border-radius: 8px; }
+.gantt-wrap svg { display: block; }
+.gantt text { fill: var(--text-2); font-size: 11px; }
+.gantt .label { fill: var(--text); font-size: 12px; cursor: pointer; }
+.gantt .row-band { fill: var(--band); }
+.gantt .gridline { stroke: var(--grid); }
+.gantt .shift { fill: none; stroke: var(--axis); }
+.gantt .travel { stroke: var(--travel); stroke-width: 2; }
+.gantt .wait { fill: var(--wait); }
+.gantt .break { fill: var(--break); }
+.gantt .window { fill: var(--window); stroke: var(--accent); stroke-width: 1; }
+.gantt .service { cursor: pointer; }
+.gantt .service.p3 { stroke: var(--text); stroke-width: 1.5; stroke-dasharray: 3 2; }
+.gantt .service.selected { stroke: var(--text); stroke-width: 3; stroke-dasharray: none; }
+.gantt .dim { opacity: 0.25; }
+.leaflet-container { background: var(--band); font: inherit; }
+.leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--surface); color: var(--text); }
+@media (max-width: 860px) {
+  .mapgrid { grid-template-columns: minmax(0, 1fr); }
+  .map-host { height: 58vh; min-height: 320px; }
+  .details { max-height: none; }
+  body { font-size: 14px; }
+  .head h1 { font-size: 1.3rem; }
+  section { padding: 12px; }
+}
+
+</style>
+</head>
+<body>
+<main class="page">
+<header class="head">
+<p class="crumb"><a href="index.html">All instances</a></p>
+<h1>pecs-t10-servable-s5</h1>
+<p class="lead">Synthetic HVAC field-service planning day in Pécs: 10 technicians in 9 teams, 66 jobs waiting, all of which one known plan serves.</p>
+<p class="quiet">Pécs · servable · 2026-06-16 · 10 technicians · 9 teams · 66 jobs · dataset version 1.1.0</p>
+<nav class="jump" aria-label="Sections"><a href="#objective">Objective</a><a href="#map">Map</a><a href="#timeline">Timeline</a><a href="#unserved">Jobs not served</a><a href="#solution">Solution</a></nav>
+</header>
+
+<section id="objective">
+<h2>Objective and bounds</h2>
+<div class="table-wrap"><table class="objective"><thead><tr><th>Tier</th><th>Objective</th><th>Sense</th><th class="num">Solution</th><th class="num">Upper bound</th><th class="num">Share of bound</th></tr></thead><tbody><tr><td>1</td><th scope="row">Service minutes served</th><td>maximise</td><td class="num">3 660</td><td class="num">3 660</td><td class="num">100.0 %</td></tr><tr><td>2</td><th scope="row">Priority-3 service minutes served</th><td>maximise</td><td class="num">60</td><td class="num">60</td><td class="num">100.0 %</td></tr><tr><td>3</td><th scope="row">Travel time</th><td>minimise</td><td class="num">16 380 s (4 h 33 min)</td><td class="num">–</td><td class="num">–</td></tr></tbody></table></div><p class="quiet">For information (in no tier): 66 of 66 jobs served, travel distance 176.3 km, 3 660 service minutes in the queue.</p><p class="quiet">No feasible solution serves more service minutes than service_minutes_max, nor more service minutes of priority-3 jobs than priority3_service_minutes_max. Both come from a capacity relaxation (a fractional knapsack over each job&#x27;s service plus its cheapest incoming leg); they are upper limits, usually not attainable.</p>
+</section>
+
+<section id="map">
+<div class="section-head">
+<h2>Map</h2>
+<div class="toolbar">
+<label class="control">Colour by <select id="color-by">
+<option value="team">Team</option>
+<option value="priority">Priority</option>
+<option value="type">Job type</option>
+</select></label>
+<label class="control"><input type="checkbox" id="only-unserved"> Only jobs not served</label>
+<label class="control"><input type="checkbox" id="only-p3"> Only priority 3</label>
+</div>
+</div>
+<div class="mapgrid">
+<div class="mapcol">
+<p id="map-notice" class="notice" hidden></p>
+<div id="leaflet" class="map-host" hidden></div>
+<div id="static-map" class="map-host static" hidden></div>
+<div id="legend" class="legend" aria-label="Colour legend"></div>
+</div>
+<aside id="details" class="details" aria-live="polite">
+<p class="quiet">Select a job on the map, in the timeline or in a list to see its time windows, priority, skills and where the solution serves it. Select a team by its route or its timeline label.</p>
+</aside>
+</div>
+<noscript><p class="notice">The map and the timeline need JavaScript. The objective and the solution's provenance are shown without it.</p></noscript>
+</section>
+
+<section id="timeline">
+<div class="section-head"><h2>Timeline</h2></div>
+<p class="quiet">One row per team, from the lead's shift start to its end: travel, waiting, service and breaks. Priority-3 service has a dashed outline. Select a job to show its time windows on its row.</p>
+<div id="gantt" class="gantt-wrap"></div>
+<div class="legend" id="gantt-legend"></div>
+</section>
+
+<section id="unserved">
+<h2>Jobs not served</h2>
+<div id="unserved-list"></div>
+</section>
+
+<section id="solution">
+<h2>Solution</h2>
+<dl class="kv"><dt>Solution id</dt><dd>rdo</dd><dt>Solver</dt><dd>RDO day planner</dd><dt>Solver version</dt><dd>git-70ad5f72ac92</dd><dt>Solver commit</dt><dd>70ad5f72ac92592cbb32904cc827c3de270a538e</dd><dt>Iteration budget</dt><dd>200 000</dd><dt>Random seed</dt><dd>7535367646364350782</dd><dt>Fixed clock</dt><dd>2026-06-15T12:00:00Z</dd><dt>Produced</dt><dd>2026-11-10</dd><dt>Wall time</dt><dd>110.1 s (informational)</dd><dt>Invocation SHA-256</dt><dd>25a6b3d96eae2dc9a3bf187f4a08251a24e2c097ccdc90bb5ac034d5ba159646</dd><dt>Note</dt><dd>–</dd></dl>
+</section>
+</main>
+<script type="application/json" id="data">{"bounds":{"priority3_service_minutes_max":60,"service_minutes_max":3660,"statement":"No feasible solution serves more service minutes than service_minutes_max, nor more service minutes of priority-3 jobs than priority3_service_minutes_max. Both come from a capacity relaxation (a fractional knapsack over each job's service plus its cheapest incoming leg); they are upper limits, usually not attainable."},"date":"2026-06-16","description":"Synthetic HVAC field-service planning day in Pécs: 10 technicians in 9 teams, 66 jobs waiting, all of which one known plan serves.","instance":"pecs-t10-servable-s5","jobs":[{"attributes":{"customer_type":"working","devices":2,"dwelling":"house","type":"cleaning"},"id":"j0001","lat":46.186806,"lon":18.258979,"priority":1,"served":{"end":873,"start":843,"team":"team04"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":40,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0002","lat":46.186213,"lon":18.255379,"priority":1,"served":{"end":780,"start":750,"team":"team09"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":40,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"washing"},"id":"j0003","lat":46.039671,"lon":18.221566,"priority":1,"served":{"end":612,"start":552,"team":"team06"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":65,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"house","type":"cleaning"},"id":"j0004","lat":46.081883,"lon":18.233961,"priority":1,"served":{"end":702,"start":672,"team":"team02"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":45,"windows":[[600,720]]},{"attributes":{"customer_type":"home","devices":3,"dwelling":"house","type":"washing"},"id":"j0005","lat":46.187675,"lon":18.256942,"priority":1,"served":{"end":961,"start":781,"team":"team09"},"service_minutes":180,"skills":[{"count":1,"skill":"service"}],"value_eur":275,"windows":[[750,990]]},{"attributes":{"customer_type":"business","devices":2,"dwelling":"office","type":"washing"},"id":"j0006","lat":46.074672,"lon":18.223592,"priority":1,"served":{"end":870,"start":750,"team":"team05"},"service_minutes":120,"skills":[{"count":1,"skill":"service"}],"value_eur":170,"windows":[]},{"attributes":{"customer_type":"business","devices":4,"dwelling":"office","type":"cleaning"},"id":"j0007","lat":46.179592,"lon":18.264359,"priority":2,"served":{"end":592,"start":502,"team":"team04"},"service_minutes":90,"skills":[{"count":1,"skill":"service"}],"value_eur":160,"windows":[[480,960]]},{"attributes":{"customer_type":"business","devices":5,"dwelling":"office","type":"cleaning"},"id":"j0008","lat":46.079407,"lon":18.219103,"priority":1,"served":{"end":840,"start":780,"team":"team01"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":95,"windows":[[480,960]]},{"attributes":{"customer_type":"working","devices":2,"dwelling":"house","type":"cleaning"},"id":"j0009","lat":46.184719,"lon":18.257651,"priority":1,"served":{"end":965,"start":935,"team":"team04"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":50,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0010","lat":46.048861,"lon":18.226049,"priority":1,"served":{"end":614,"start":584,"team":"team08"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":55,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0011","lat":46.082146,"lon":18.220401,"priority":1,"served":{"end":572,"start":542,"team":"team05"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":40,"windows":[]},{"attributes":{"customer_type":"working","devices":2,"dwelling":"flat","type":"washing"},"id":"j0012","lat":46.07466,"lon":18.226299,"priority":1,"served":{"end":665,"start":545,"team":"team03"},"service_minutes":120,"skills":[{"count":1,"skill":"service"}],"value_eur":135,"windows":[]},{"attributes":{"customer_type":"working","devices":3,"dwelling":"flat","type":"cleaning"},"id":"j0013","lat":46.079373,"lon":18.2239,"priority":1,"served":{"end":512,"start":482,"team":"team03"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":40,"windows":[]},{"attributes":{"customer_type":"working","devices":3,"dwelling":"house","type":"cleaning"},"id":"j0014","lat":46.083692,"lon":18.220734,"priority":1,"served":{"end":541,"start":481,"team":"team05"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":95,"windows":[[480,600]]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0015","lat":46.048976,"lon":18.22358,"priority":1,"served":{"end":551,"start":521,"team":"team08"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":40,"windows":[[480,600]]},{"attributes":{"customer_type":"home","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0016","lat":46.074611,"lon":18.222257,"priority":1,"served":{"end":665,"start":635,"team":"team05"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":35,"windows":[]},{"attributes":{"customer_type":"business","devices":2,"dwelling":"office","type":"cleaning"},"id":"j0017","lat":46.037417,"lon":18.2371,"priority":1,"served":{"end":810,"start":750,"team":"team06"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":75,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0018","lat":46.039597,"lon":18.225568,"priority":1,"served":{"end":550,"start":520,"team":"team06"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":45,"windows":[[480,600]]},{"attributes":{"customer_type":"working","devices":2,"dwelling":"house","type":"washing"},"id":"j0019","lat":46.185624,"lon":18.25311,"priority":2,"served":{"end":716,"start":596,"team":"team09"},"service_minutes":120,"skills":[{"count":1,"skill":"service"}],"value_eur":150,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0020","lat":46.074367,"lon":18.222631,"priority":1,"served":{"end":901,"start":871,"team":"team05"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":35,"windows":[[840,960]]},{"attributes":{"customer_type":"home","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0021","lat":46.077843,"lon":18.228005,"priority":1,"served":{"end":934,"start":904,"team":"team01"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":45,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0022","lat":46.077421,"lon":18.228139,"priority":1,"served":{"end":903,"start":873,"team":"team01"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":35,"windows":[[840,960]]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0023","lat":46.186118,"lon":18.254045,"priority":1,"served":{"end":595,"start":565,"team":"team09"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":35,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0024","lat":46.027081,"lon":18.235677,"priority":1,"served":{"end":935,"start":905,"team":"team06"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":40,"windows":[[840,960]]},{"attributes":{"customer_type":"home","devices":2,"dwelling":"house","type":"cleaning"},"id":"j0025","lat":46.044512,"lon":18.23195,"priority":1,"served":{"end":517,"start":487,"team":"team06"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":45,"windows":[]},{"attributes":{"customer_type":"home","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0026","lat":46.071194,"lon":18.22848,"priority":1,"served":{"end":544,"start":514,"team":"team07"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":55,"windows":[]},{"attributes":{"customer_type":"working","devices":2,"dwelling":"house","type":"cleaning"},"id":"j0027","lat":46.184521,"lon":18.260787,"priority":1,"served":{"end":841,"start":781,"team":"team04"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":75,"windows":[]},{"attributes":{"customer_type":"working","devices":3,"dwelling":"house","type":"repair"},"id":"j0028","lat":46.056057,"lon":18.228093,"priority":3,"served":{"end":905,"start":845,"team":"team07"},"service_minutes":60,"skills":[{"count":1,"skill":"fgas"}],"value_eur":85,"windows":[]},{"attributes":{"customer_type":"business","devices":4,"dwelling":"office","type":"cleaning"},"id":"j0029","lat":46.080231,"lon":18.220176,"priority":1,"served":{"end":871,"start":841,"team":"team01"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":40,"windows":[[480,960]]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0030","lat":46.183824,"lon":18.263366,"priority":2,"served":{"end":780,"start":750,"team":"team04"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":50,"windows":[[480,600],[720,840]]},{"attributes":{"customer_type":"home","devices":1,"dwelling":"flat","type":"washing"},"id":"j0031","lat":46.18334,"lon":18.264334,"priority":1,"served":{"end":654,"start":594,"team":"team04"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":75,"windows":[]},{"attributes":{"customer_type":"business","devices":2,"dwelling":"office","type":"cleaning"},"id":"j0032","lat":46.070042,"lon":18.237908,"priority":1,"served":{"end":810,"start":750,"team":"team07"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":80,"windows":[[480,960]]},{"attributes":{"customer_type":"business","devices":4,"dwelling":"office","type":"cleaning"},"id":"j0033","lat":46.045928,"lon":18.229736,"priority":1,"served":{"end":518,"start":488,"team":"team08"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":45,"windows":[]},{"attributes":{"customer_type":"home","devices":2,"dwelling":"flat","type":"cleaning"},"id":"j0034","lat":46.072738,"lon":18.241367,"priority":1,"served":{"end":606,"start":546,"team":"team07"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":110,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0035","lat":46.18303,"lon":18.264956,"priority":1,"served":{"end":685,"start":655,"team":"team04"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":45,"windows":[]},{"attributes":{"customer_type":"working","devices":3,"dwelling":"house","type":"washing"},"id":"j0036","lat":46.080391,"lon":18.238626,"priority":1,"served":{"end":870,"start":750,"team":"team02"},"service_minutes":120,"skills":[{"count":1,"skill":"service"}],"value_eur":155,"windows":[]},{"attributes":{"customer_type":"home","devices":2,"dwelling":"house","type":"cleaning"},"id":"j0037","lat":46.043622,"lon":18.222507,"priority":1,"served":{"end":968,"start":908,"team":"team07"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":110,"windows":[]},{"attributes":{"customer_type":"home","devices":3,"dwelling":"house","type":"cleaning"},"id":"j0038","lat":46.080556,"lon":18.239233,"priority":1,"served":{"end":962,"start":902,"team":"team02"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":80,"windows":[]},{"attributes":{"customer_type":"home","devices":2,"dwelling":"flat","type":"cleaning"},"id":"j0039","lat":46.041153,"lon":18.228242,"priority":1,"served":{"end":706,"start":676,"team":"team06"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":50,"windows":[]},{"attributes":{"customer_type":"home","devices":2,"dwelling":"flat","type":"cleaning"},"id":"j0040","lat":46.047716,"lon":18.22467,"priority":1,"served":{"end":675,"start":615,"team":"team08"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":70,"windows":[[600,720]]},{"attributes":{"customer_type":"working","devices":3,"dwelling":"flat","type":"washing"},"id":"j0041","lat":46.079762,"lon":18.25324,"priority":1,"served":{"end":668,"start":488,"team":"team02"},"service_minutes":180,"skills":[{"count":1,"skill":"service"}],"value_eur":185,"windows":[[480,720]]},{"attributes":{"customer_type":"working","devices":2,"dwelling":"flat","type":"washing"},"id":"j0042","lat":46.187793,"lon":18.258673,"priority":1,"served":{"end":934,"start":874,"team":"team04"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":95,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"washing"},"id":"j0043","lat":46.07453,"lon":18.221758,"priority":1,"served":{"end":634,"start":574,"team":"team05"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":90,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"washing"},"id":"j0044","lat":46.040853,"lon":18.228764,"priority":2,"served":{"end":675,"start":615,"team":"team06"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":65,"windows":[]},{"attributes":{"customer_type":"home","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0045","lat":46.049374,"lon":18.228106,"priority":1,"served":{"end":583,"start":553,"team":"team08"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":55,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0046","lat":46.046731,"lon":18.225659,"priority":2,"served":{"end":706,"start":676,"team":"team08"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":40,"windows":[]},{"attributes":{"customer_type":"home","devices":1,"dwelling":"house","type":"washing"},"id":"j0047","lat":46.08356,"lon":18.24564,"priority":1,"served":{"end":545,"start":485,"team":"team09"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":75,"windows":[]},{"attributes":{"customer_type":"business","devices":2,"dwelling":"office","type":"installation"},"id":"j0048","lat":46.079309,"lon":18.223126,"priority":2,"served":{"end":722,"start":482,"team":"team01"},"service_minutes":240,"skills":[{"count":2,"skill":"install"},{"count":1,"skill":"fgas"}],"value_eur":285,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"washing"},"id":"j0049","lat":46.034921,"lon":18.23279,"priority":1,"served":{"end":902,"start":842,"team":"team06"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":65,"windows":[[840,960]]},{"attributes":{"customer_type":"working","devices":2,"dwelling":"flat","type":"cleaning"},"id":"j0050","lat":46.045251,"lon":18.22299,"priority":1,"served":{"end":810,"start":750,"team":"team08"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":90,"windows":[]},{"attributes":{"customer_type":"home","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0051","lat":46.074389,"lon":18.222629,"priority":1,"served":{"end":696,"start":666,"team":"team05"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":55,"windows":[]},{"attributes":{"customer_type":"home","devices":2,"dwelling":"flat","type":"cleaning"},"id":"j0052","lat":46.071621,"lon":18.218557,"priority":1,"served":{"end":965,"start":935,"team":"team05"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":45,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"washing"},"id":"j0053","lat":46.045919,"lon":18.221871,"priority":1,"served":{"end":900,"start":840,"team":"team08"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":60,"windows":[[840,960]]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0054","lat":46.073004,"lon":18.228064,"priority":1,"served":{"end":696,"start":666,"team":"team03"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":40,"windows":[]},{"attributes":{"customer_type":"home","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0055","lat":46.080727,"lon":18.238259,"priority":1,"served":{"end":901,"start":871,"team":"team02"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":55,"windows":[]},{"attributes":{"customer_type":"home","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0056","lat":46.081546,"lon":18.219358,"priority":1,"served":{"end":511,"start":481,"team":"team07"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":55,"windows":[]},{"attributes":{"customer_type":"working","devices":3,"dwelling":"house","type":"cleaning"},"id":"j0057","lat":46.07686,"lon":18.237626,"priority":1,"served":{"end":698,"start":608,"team":"team07"},"service_minutes":90,"skills":[{"count":1,"skill":"service"}],"value_eur":130,"windows":[]},{"attributes":{"customer_type":"working","devices":3,"dwelling":"house","type":"cleaning"},"id":"j0058","lat":46.056641,"lon":18.225307,"priority":1,"served":{"end":844,"start":814,"team":"team07"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":35,"windows":[]},{"attributes":{"customer_type":"working","devices":2,"dwelling":"flat","type":"washing"},"id":"j0059","lat":46.071242,"lon":18.232156,"priority":1,"served":{"end":931,"start":811,"team":"team03"},"service_minutes":120,"skills":[{"count":1,"skill":"service"}],"value_eur":115,"windows":[]},{"attributes":{"customer_type":"working","devices":2,"dwelling":"flat","type":"cleaning"},"id":"j0060","lat":46.075911,"lon":18.221028,"priority":1,"served":{"end":543,"start":513,"team":"team03"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":35,"windows":[[480,600],[720,840]]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0061","lat":46.073473,"lon":18.217236,"priority":1,"served":{"end":933,"start":903,"team":"team05"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":45,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"washing"},"id":"j0062","lat":46.073869,"lon":18.233047,"priority":1,"served":{"end":810,"start":750,"team":"team03"},"service_minutes":60,"skills":[{"count":1,"skill":"service"}],"value_eur":70,"windows":[]},{"attributes":{"customer_type":"home","devices":2,"dwelling":"house","type":"cleaning"},"id":"j0063","lat":46.183824,"lon":18.263366,"priority":1,"served":{"end":716,"start":686,"team":"team04"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":55,"windows":[]},{"attributes":{"customer_type":"working","devices":2,"dwelling":"flat","type":"cleaning"},"id":"j0064","lat":46.037216,"lon":18.235502,"priority":1,"served":{"end":841,"start":811,"team":"team06"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":35,"windows":[]},{"attributes":{"customer_type":"home","devices":2,"dwelling":"flat","type":"cleaning"},"id":"j0065","lat":46.080494,"lon":18.226676,"priority":1,"served":{"end":965,"start":935,"team":"team01"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":55,"windows":[]},{"attributes":{"customer_type":"working","devices":1,"dwelling":"flat","type":"cleaning"},"id":"j0066","lat":46.067466,"lon":18.226521,"priority":1,"served":{"end":963,"start":933,"team":"team03"},"service_minutes":30,"skills":[{"count":1,"skill":"service"}],"value_eur":45,"windows":[]}],"kind":"servable","objective":{"jobs_served":66,"priority3_service_minutes":60,"service_minutes":3660,"travel_distance_m":176266,"travel_time_s":16380},"queue_service_minutes":3660,"region":"Pécs","routes":[{"back":{"arrive":968,"leave":965},"distance_m":4184,"service_minutes":420,"stops":[{"arrive":482,"end":722,"job":"j0048","leave":480,"start":482},{"arrive":723,"end":840,"job":"j0008","leave":722,"start":780},{"arrive":841,"end":871,"job":"j0029","leave":840,"start":841},{"arrive":873,"end":903,"job":"j0022","leave":871,"start":873},{"arrive":904,"end":934,"job":"j0021","leave":903,"start":904},{"arrive":935,"end":965,"job":"j0065","leave":934,"start":935}],"team":"team01","travel_s":660},{"back":{"arrive":967,"leave":962},"distance_m":11005,"service_minutes":420,"stops":[{"arrive":488,"end":668,"job":"j0041","leave":480,"start":488},{"arrive":672,"end":702,"job":"j0004","leave":668,"start":672},{"arrive":704,"end":870,"job":"j0036","leave":702,"start":750},{"arrive":871,"end":901,"job":"j0055","leave":870,"start":871},{"arrive":902,"end":962,"job":"j0038","leave":901,"start":902}],"team":"team02","travel_s":1260},{"back":{"arrive":967,"leave":963},"distance_m":6702,"service_minutes":420,"stops":[{"arrive":482,"end":512,"job":"j0013","leave":480,"start":482},{"arrive":513,"end":543,"job":"j0060","leave":512,"start":513},{"arrive":545,"end":665,"job":"j0012","leave":543,"start":545},{"arrive":666,"end":696,"job":"j0054","leave":665,"start":666},{"arrive":697,"end":810,"job":"j0062","leave":696,"start":750},{"arrive":811,"end":931,"job":"j0059","leave":810,"start":811},{"arrive":933,"end":963,"job":"j0066","leave":931,"start":933}],"team":"team03","travel_s":840},{"back":{"arrive":988,"leave":965},"distance_m":42097,"service_minutes":420,"stops":[{"arrive":502,"end":592,"job":"j0007","leave":480,"start":502},{"arrive":594,"end":654,"job":"j0031","leave":592,"start":594},{"arrive":655,"end":685,"job":"j0035","leave":654,"start":655},{"arrive":686,"end":716,"job":"j0063","leave":685,"start":686},{"arrive":716,"end":780,"job":"j0030","leave":716,"start":750},{"arrive":781,"end":841,"job":"j0027","leave":780,"start":781},{"arrive":843,"end":873,"job":"j0001","leave":841,"start":843},{"arrive":874,"end":934,"job":"j0042","leave":873,"start":874},{"arrive":935,"end":965,"job":"j0009","leave":934,"start":935}],"team":"team04","travel_s":3240},{"back":{"arrive":972,"leave":965},"distance_m":6823,"service_minutes":420,"stops":[{"arrive":481,"end":541,"job":"j0014","leave":480,"start":481},{"arrive":542,"end":572,"job":"j0011","leave":541,"start":542},{"arrive":574,"end":634,"job":"j0043","leave":572,"start":574},{"arrive":635,"end":665,"job":"j0016","leave":634,"start":635},{"arrive":666,"end":696,"job":"j0051","leave":665,"start":666},{"arrive":697,"end":870,"job":"j0006","leave":696,"start":750},{"arrive":871,"end":901,"job":"j0020","leave":870,"start":871},{"arrive":903,"end":933,"job":"j0061","leave":901,"start":903},{"arrive":935,"end":965,"job":"j0052","leave":933,"start":935}],"team":"team05","travel_s":1140},{"back":{"arrive":956,"leave":935},"distance_m":32824,"service_minutes":390,"stops":[{"arrive":487,"end":517,"job":"j0025","leave":480,"start":487},{"arrive":520,"end":550,"job":"j0018","leave":517,"start":520},{"arrive":552,"end":612,"job":"j0003","leave":550,"start":552},{"arrive":615,"end":675,"job":"j0044","leave":612,"start":615},{"arrive":676,"end":706,"job":"j0039","leave":675,"start":676},{"arrive":709,"end":810,"job":"j0017","leave":706,"start":750},{"arrive":811,"end":841,"job":"j0064","leave":810,"start":811},{"arrive":842,"end":902,"job":"j0049","leave":841,"start":842},{"arrive":905,"end":935,"job":"j0024","leave":902,"start":905}],"team":"team06","travel_s":2700},{"back":{"arrive":984,"leave":968},"distance_m":22080,"service_minutes":420,"stops":[{"arrive":481,"end":511,"job":"j0056","leave":480,"start":481},{"arrive":514,"end":544,"job":"j0026","leave":511,"start":514},{"arrive":546,"end":606,"job":"j0034","leave":544,"start":546},{"arrive":608,"end":698,"job":"j0057","leave":606,"start":608},{"arrive":701,"end":810,"job":"j0032","leave":698,"start":750},{"arrive":814,"end":844,"job":"j0058","leave":810,"start":814},{"arrive":845,"end":905,"job":"j0028","leave":844,"start":845},{"arrive":908,"end":968,"job":"j0037","leave":905,"start":908}],"team":"team07","travel_s":2100},{"back":{"arrive":921,"leave":900},"distance_m":27037,"service_minutes":330,"stops":[{"arrive":488,"end":518,"job":"j0033","leave":480,"start":488},{"arrive":521,"end":551,"job":"j0015","leave":518,"start":521},{"arrive":553,"end":583,"job":"j0045","leave":551,"start":553},{"arrive":584,"end":614,"job":"j0010","leave":583,"start":584},{"arrive":615,"end":675,"job":"j0040","leave":614,"start":615},{"arrive":676,"end":706,"job":"j0046","leave":675,"start":676},{"arrive":708,"end":810,"job":"j0050","leave":706,"start":750},{"arrive":811,"end":900,"job":"j0053","leave":810,"start":840}],"team":"team08","travel_s":2400},{"back":{"arrive":967,"leave":961},"distance_m":23514,"service_minutes":420,"stops":[{"arrive":485,"end":545,"job":"j0047","leave":480,"start":485},{"arrive":565,"end":595,"job":"j0023","leave":545,"start":565},{"arrive":596,"end":716,"job":"j0019","leave":595,"start":596},{"arrive":717,"end":780,"job":"j0002","leave":716,"start":750},{"arrive":781,"end":961,"job":"j0005","leave":780,"start":781}],"team":"team09","travel_s":2040}],"share":{"priority3_service_minutes":1.0,"service_minutes":1.0},"solution":{"id":"rdo","provenance":{"date":"2026-11-10","fixed_clock":"2026-06-15T12:00:00Z","invocation_sha256":"25a6b3d96eae2dc9a3bf187f4a08251a24e2c097ccdc90bb5ac034d5ba159646","iteration_budget":200000,"note":null,"random_seed":7535367646364350782,"solver":{"commit":"70ad5f72ac92592cbb32904cc827c3de270a538e","name":"RDO day planner","version":"git-70ad5f72ac92"},"wall_time_s":110.1}},"teams":[{"id":"team01","members":["t01","t02"]},{"id":"team02","members":["t03"]},{"id":"team03","members":["t04"]},{"id":"team04","members":["t05"]},{"id":"team05","members":["t06"]},{"id":"team06","members":["t07"]},{"id":"team07","members":["t08"]},{"id":"team08","members":["t09"]},{"id":"team09","members":["t10"]}],"technicians":[{"breaks":[[750,780]],"end":[46.085101,18.218383],"id":"t01","shift":[480,990],"skills":["install","fgas","service"],"start":[46.085101,18.218383]},{"breaks":[[750,780]],"end":[46.085101,18.218383],"id":"t02","shift":[480,990],"skills":["install","fgas","service"],"start":[46.085101,18.218383]},{"breaks":[[720,750]],"end":[46.075461,18.215871],"id":"t03","shift":[480,990],"skills":["service"],"start":[46.049038,18.289645]},{"breaks":[[720,750]],"end":[46.064504,18.202113],"id":"t04","shift":[480,990],"skills":["service"],"start":[46.085101,18.218383]},{"breaks":[[720,750]],"end":[46.082465,18.321947],"id":"t05","shift":[480,990],"skills":["service","fgas"],"start":[46.049038,18.289645]},{"breaks":[[720,750]],"end":[46.072118,18.179904],"id":"t06","shift":[480,990],"skills":["service"],"start":[46.085101,18.218383]},{"breaks":[[720,750]],"end":[45.960986,18.100967],"id":"t07","shift":[480,990],"skills":["service"],"start":[46.049038,18.289645]},{"breaks":[[720,750]],"end":[45.973175,18.141504],"id":"t08","shift":[480,990],"skills":["service","fgas"],"start":[46.085101,18.218383]},{"breaks":[[720,750]],"end":[45.956538,18.096633],"id":"t09","shift":[480,990],"skills":["service"],"start":[46.049038,18.289645]},{"breaks":[[720,750]],"end":[46.196532,18.271574],"id":"t10","shift":[480,990],"skills":["service"],"start":[46.085101,18.218383]}],"tiers":[{"name":"service_minutes","rank":1,"sense":"maximize","unit":"min"},{"name":"priority3_service_minutes","rank":2,"sense":"maximize","unit":"min"},{"name":"travel_time_s","rank":3,"sense":"minimize","unit":"s"}],"tiles":{"attribution":"© OpenStreetMap contributors","attribution_url":"https://www.openstreetmap.org/copyright","url":"https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"},"timezone":"Europe/Budapest","version":"1.1.0"}</script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script>
+// Solution viewer: map, timeline and lists of one instance and its best known solution.
+// Everything shown comes from the embedded JSON (#data): the published problem and solution.
+(function () {
+  "use strict";
+  var data = JSON.parse(document.getElementById("data").textContent);
+  var SVGNS = "http://www.w3.org/2000/svg";
+  var job = {}, team = {}, tech = {}, route = {}, teamIndex = {};
+  data.jobs.forEach(function (j) { job[j.id] = j; });
+  data.technicians.forEach(function (t) { tech[t.id] = t; });
+  data.teams.forEach(function (t, i) { team[t.id] = t; teamIndex[t.id] = i; });
+  data.routes.forEach(function (r) { route[r.team] = r; });
+  var types = Array.from(new Set(data.jobs.map(function (j) { return j.attributes.type; }))).sort();
+  var state = { color: "team", unservedOnly: false, p3Only: false, job: null, team: null };
+
+  function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function h(tag, props, children) {
+    var node = document.createElement(tag);
+    if (props) Object.keys(props).forEach(function (k) {
+      if (k === "text") node.textContent = props[k];
+      else if (k === "cls") node.className = props[k];
+      else node.setAttribute(k, props[k]);
+    });
+    (children || []).forEach(function (c) {
+      if (c !== null && c !== undefined) node.appendChild(typeof c === "string" ? document.createTextNode(c) : c);
+    });
+    return node;
+  }
+  function s(tag, attrs) {
+    var node = document.createElementNS(SVGNS, tag);
+    Object.keys(attrs || {}).forEach(function (k) { node.setAttribute(k, attrs[k]); });
+    return node;
+  }
+  function pad(n) { return (n < 10 ? "0" : "") + n; }
+  function clock(m) { return pad(Math.floor(m / 60)) + ":" + pad(m % 60); }
+  function span(a) { return clock(a[0]) + "–" + clock(a[1]); }
+  function windows(ws) { return ws.length ? ws.map(span).join(", ") : "any time in the shift"; }
+  function skills(ss) {
+    return ss.length ? ss.map(function (x) { return x.skill + (x.count > 1 ? " × " + x.count : ""); }).join(", ") : "none";
+  }
+  function num(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, " "); }
+  function teamColor(id) { return css("--s" + ((teamIndex[id] % 8) + 1)); }
+  function colorOf(j) {
+    if (state.color === "priority") return css("--p" + j.priority);
+    if (state.color === "type") return css("--s" + ((types.indexOf(j.attributes.type) % 8) + 1));
+    return j.served ? teamColor(j.served.team) : css("--unserved");
+  }
+  function visible(j) {
+    if (state.unservedOnly && j.served) return false;
+    if (state.p3Only && j.priority !== 3) return false;
+    return true;
+  }
+  function jobLink(id) {
+    var a = h("a", { href: "#details", text: id });
+    a.addEventListener("click", function (e) { e.preventDefault(); selectJob(id, true); });
+    return a;
+  }
+  function teamLink(id) {
+    var a = h("a", { href: "#details", text: id });
+    a.addEventListener("click", function (e) { e.preventDefault(); selectTeam(id, true); });
+    return a;
+  }
+  function kv(pairs) {
+    var dl = h("dl", { cls: "kv" });
+    pairs.forEach(function (p) {
+      dl.appendChild(h("dt", { text: p[0] }));
+      dl.appendChild(typeof p[1] === "string" ? h("dd", { text: p[1] }) : h("dd", null, [p[1]]));
+    });
+    return dl;
+  }
+
+  // ------------------------------------------------------------------ map
+  var map = null, jobMarks = {}, routeLines = {}, staticSvg = null;
+  function leaderOf(id) { return tech[team[id].members[0]]; }
+  function routePath(r) {
+    var lead = leaderOf(r.team);
+    return [lead.start].concat(r.stops.map(function (x) { return [job[x.job].lat, job[x.job].lon]; }), [lead.end]);
+  }
+  // The basemap only over http(s): the OpenStreetMap tile servers refuse requests without a
+  // Referer (their tile usage policy), and a page opened as a file sends none.
+  function addBasemap() {
+    var tiles = data.tiles;
+    if (!tiles) return;
+    if (location.protocol !== "http:" && location.protocol !== "https:") {
+      var notice = document.getElementById("map-notice");
+      notice.textContent = "No basemap: map tiles load only when this folder is served over HTTP(S) by a static " +
+        "web server. Opened as a file, the page requests no tiles.";
+      notice.hidden = false;
+      return;
+    }
+    var attribution = tiles.attribution_url
+      ? '<a href="' + encodeURI(tiles.attribution_url) + '">' + tiles.attribution.replace(/[<>&"]/g, "") + "</a>"
+      : (tiles.attribution || "").replace(/[<>&"]/g, "");
+    L.tileLayer(tiles.url, { maxZoom: 19, attribution: attribution }).addTo(map);
+  }
+  function initLeaflet() {
+    var host = document.getElementById("leaflet");
+    host.hidden = false;
+    map = L.map(host, { preferCanvas: true });
+    addBasemap();
+    var bounds = L.latLngBounds([]);
+    data.routes.forEach(function (r) {
+      var line = L.polyline(routePath(r), { color: teamColor(r.team), weight: 3, opacity: 0.85 });
+      line.on("click", function () { selectTeam(r.team, false); });
+      line.addTo(map);
+      routeLines[r.team] = line;
+    });
+    data.jobs.forEach(function (j) {
+      var m = L.circleMarker([j.lat, j.lon], {
+        radius: j.service_minutes <= 60 ? 4 : j.service_minutes <= 120 ? 6 : 8, weight: 1,
+        color: css("--text-2"), fillColor: colorOf(j), fillOpacity: j.served ? 0.9 : 0.35,
+      });
+      m.bindTooltip(j.id + " · P" + j.priority + (j.served ? " · " + j.served.team : " · not served"));
+      m.on("click", function () { selectJob(j.id, false); });
+      m.addTo(map);
+      jobMarks[j.id] = m;
+      bounds.extend([j.lat, j.lon]);
+    });
+    var seen = {};
+    data.technicians.forEach(function (t) {
+      [["start", t.start], ["end", t.end]].forEach(function (p) {
+        var key = p[1].join(",");
+        bounds.extend(p[1]);
+        if (seen[key]) { seen[key].push(t.id); return; }
+        seen[key] = [t.id];
+        var marker = L.marker(p[1], { icon: L.divIcon({ className: "", html: '<div style="width:12px;height:12px;' +
+          "background:" + css("--text") + ";border:2px solid " + css("--surface") + ';transform:rotate(45deg)"></div>',
+          iconSize: [12, 12], iconAnchor: [6, 6] }) });
+        marker.bindTooltip(function () { return "Start/end: " + seen[key].join(", "); });
+        marker.addTo(map);
+      });
+    });
+    map.fitBounds(bounds, { padding: [16, 16] });
+  }
+  function initStatic() {
+    var host = document.getElementById("static-map");
+    host.hidden = false;
+    var pts = data.jobs.map(function (j) { return [j.lat, j.lon]; })
+      .concat(data.technicians.map(function (t) { return t.start; }), data.technicians.map(function (t) { return t.end; }));
+    var lat0 = Math.min.apply(null, pts.map(function (p) { return p[0]; }));
+    var lat1 = Math.max.apply(null, pts.map(function (p) { return p[0]; }));
+    var lon0 = Math.min.apply(null, pts.map(function (p) { return p[1]; }));
+    var lon1 = Math.max.apply(null, pts.map(function (p) { return p[1]; }));
+    var k = Math.cos(((lat0 + lat1) / 2) * Math.PI / 180);
+    var w = 1000, hgt = Math.max(300, Math.round(w * (lat1 - lat0) / Math.max(1e-9, (lon1 - lon0) * k)));
+    function xy(p) {
+      return [(20 + (p[1] - lon0) / Math.max(1e-9, lon1 - lon0) * (w - 40)).toFixed(1),
+              (20 + (lat1 - p[0]) / Math.max(1e-9, lat1 - lat0) * (hgt - 40)).toFixed(1)];
+    }
+    staticSvg = s("svg", { viewBox: "0 0 " + w + " " + hgt, role: "img", "aria-label": "Map of jobs and routes" });
+    data.routes.forEach(function (r) {
+      var line = s("polyline", { points: routePath(r).map(function (p) { return xy(p).join(","); }).join(" "),
+        fill: "none", stroke: teamColor(r.team), "stroke-width": 2, opacity: 0.85 });
+      line.addEventListener("click", function () { selectTeam(r.team, false); });
+      staticSvg.appendChild(line);
+      routeLines[r.team] = line;
+    });
+    data.jobs.forEach(function (j) {
+      var p = xy([j.lat, j.lon]);
+      var c = s("circle", { cx: p[0], cy: p[1], r: j.service_minutes <= 60 ? 3 : j.service_minutes <= 120 ? 4.5 : 6,
+        fill: colorOf(j), stroke: css("--text-2"), "stroke-width": 0.5, "fill-opacity": j.served ? 0.9 : 0.35 });
+      c.appendChild(s("title")).textContent = j.id;
+      c.addEventListener("click", function () { selectJob(j.id, false); });
+      staticSvg.appendChild(c);
+      jobMarks[j.id] = c;
+    });
+    data.technicians.forEach(function (t) {
+      [t.start, t.end].forEach(function (q) {
+        var p = xy(q);
+        staticSvg.appendChild(s("rect", { x: p[0] - 5, y: p[1] - 5, width: 10, height: 10, fill: css("--text"),
+          transform: "rotate(45 " + p[0] + " " + p[1] + ")" }));
+      });
+    });
+    host.appendChild(staticSvg);
+  }
+  function restyleMap() {
+    data.jobs.forEach(function (j) {
+      var m = jobMarks[j.id], show = visible(j);
+      var sel = state.job === j.id, dim = state.team && !(j.served && j.served.team === state.team);
+      if (map) {
+        m.setStyle({ fillColor: colorOf(j), opacity: show ? 1 : 0, fillOpacity: show ? (dim ? 0.15 : j.served ? 0.9 : 0.35) : 0,
+          weight: sel ? 3 : 1, color: sel ? css("--text") : css("--text-2") });
+        if (sel) m.bringToFront();
+      } else {
+        m.setAttribute("fill", colorOf(j));
+        m.setAttribute("display", show ? "inline" : "none");
+        m.setAttribute("fill-opacity", dim ? 0.15 : j.served ? 0.9 : 0.35);
+        m.setAttribute("stroke-width", sel ? 2.5 : 0.5);
+      }
+    });
+    Object.keys(routeLines).forEach(function (id) {
+      var on = !state.team || state.team === id;
+      if (map) routeLines[id].setStyle({ color: teamColor(id), opacity: on ? 0.85 : 0.12, weight: state.team === id ? 5 : 3 });
+      else { routeLines[id].setAttribute("opacity", on ? 0.85 : 0.12); routeLines[id].setAttribute("stroke", teamColor(id)); }
+    });
+    drawLegend();
+  }
+  function drawLegend() {
+    var legend = document.getElementById("legend");
+    legend.textContent = "";
+    function item(color, text) { legend.appendChild(h("span", null, [h("span", { cls: "swatch", style: "background:" + color }), text])); }
+    if (state.color === "priority") [1, 2, 3].forEach(function (p) { item(css("--p" + p), "Priority " + p); });
+    else if (state.color === "type") types.forEach(function (t, i) { item(css("--s" + ((i % 8) + 1)), t); });
+    else { item(css("--s1"), "Served: colour of its team's route"); item(css("--unserved"), "Not served (pale)"); }
+    legend.appendChild(h("span", null, [h("span", { cls: "swatch bar", style: "background:" + css("--text") + ";width:10px;height:10px;transform:rotate(45deg)" }), "Technician start/end"]));
+  }
+
+  // ------------------------------------------------------------------ timeline
+  var gantt = { svg: null, rows: {}, x: null, windows: null };
+  function drawTimeline() {
+    var wrap = document.getElementById("gantt");
+    var t0 = Math.min.apply(null, data.technicians.map(function (t) { return t.shift[0]; }));
+    var t1 = Math.max.apply(null, data.technicians.map(function (t) { return t.shift[1]; }));
+    data.routes.forEach(function (r) { t1 = Math.max(t1, r.back.arrive); });
+    t0 = Math.floor(t0 / 60) * 60; t1 = Math.ceil(t1 / 60) * 60;
+    var labelW = 92, rowH = 26, top = 22;
+    var width = Math.max(wrap.clientWidth || 900, 900);
+    var plotW = width - labelW - 12;
+    function x(m) { return labelW + (m - t0) / (t1 - t0) * plotW; }
+    gantt.x = x;
+    var height = top + data.teams.length * rowH + 8;
+    var svg = s("svg", { width: width, height: height, class: "gantt", role: "img", "aria-label": "Timeline per team" });
+    for (var m = t0; m <= t1; m += 60) {
+      svg.appendChild(s("line", { x1: x(m), x2: x(m), y1: top - 4, y2: height - 6, class: "gridline" }));
+      svg.appendChild(s("text", { x: x(m), y: 13, "text-anchor": "middle" })).textContent = clock(m);
+    }
+    gantt.windows = s("g");
+    data.teams.forEach(function (t, i) {
+      var y = top + i * rowH, g = s("g", { "data-team": t.id });
+      if (i % 2 === 0) g.appendChild(s("rect", { x: 0, y: y, width: width, height: rowH, class: "row-band" }));
+      var lead = tech[t.members[0]];
+      var label = s("text", { x: 6, y: y + rowH / 2 + 4, class: "label" });
+      label.textContent = t.id + " (" + t.members.length + ")";
+      label.addEventListener("click", function () { selectTeam(t.id, true); });
+      g.appendChild(label);
+      g.appendChild(s("rect", { x: x(lead.shift[0]), y: y + 4, width: x(lead.shift[1]) - x(lead.shift[0]), height: rowH - 8, class: "shift", rx: 3 }));
+      t.members.forEach(function (id) {
+        tech[id].breaks.forEach(function (b) {
+          g.appendChild(s("rect", { x: x(b[0]), y: y + 6, width: x(b[1]) - x(b[0]), height: rowH - 12, class: "break" }))
+            .appendChild(s("title")).textContent = id + " break " + span(b);
+        });
+      });
+      var r = route[t.id];
+      if (r) {
+        r.stops.forEach(function (st) {
+          var mid = y + rowH / 2;
+          if (st.arrive > st.leave) g.appendChild(s("line", { x1: x(st.leave), x2: x(st.arrive), y1: mid, y2: mid, class: "travel" }));
+          if (st.start > st.arrive) g.appendChild(s("rect", { x: x(st.arrive), y: mid - 3, width: x(st.start) - x(st.arrive), height: 6, class: "wait" }));
+          var j = job[st.job];
+          var box = s("rect", { x: x(st.start), y: y + 5, width: Math.max(2, x(st.end) - x(st.start)), height: rowH - 10, rx: 2,
+            fill: teamColor(t.id), class: "service" + (j.priority === 3 ? " p3" : ""), "data-job": st.job });
+          box.appendChild(s("title")).textContent = st.job + " " + clock(st.start) + "–" + clock(st.end) + " · P" + j.priority +
+            " · windows " + windows(j.windows);
+          box.addEventListener("click", function () { selectJob(st.job, false); });
+          g.appendChild(box);
+        });
+        var mid = y + rowH / 2;
+        if (r.back.arrive > r.back.leave) g.appendChild(s("line", { x1: x(r.back.leave), x2: x(r.back.arrive), y1: mid, y2: mid, class: "travel" }));
+      } else {
+        g.appendChild(s("text", { x: x(lead.shift[0]) + 6, y: y + rowH / 2 + 4 })).textContent = "no route";
+      }
+      gantt.rows[t.id] = { g: g, y: y, h: rowH };
+      svg.appendChild(g);
+    });
+    svg.appendChild(gantt.windows);
+    wrap.textContent = "";
+    wrap.appendChild(svg);
+    gantt.svg = svg;
+    var legend = document.getElementById("gantt-legend");
+    legend.textContent = "";
+    [["--s1", "Service (team colour)"], ["--text", "Priority-3 service (dashed outline)"], ["--travel", "Travel"],
+     ["--wait", "Waiting"], ["--break", "Break"], ["--window", "Selected job's time windows"]].forEach(function (p) {
+      legend.appendChild(h("span", null, [h("span", { cls: "swatch bar", style: "background:" + css(p[0]) }), p[1]]));
+    });
+  }
+  function restyleTimeline() {
+    if (!gantt.svg) return;
+    gantt.svg.querySelectorAll(".service").forEach(function (b) {
+      b.classList.toggle("selected", b.getAttribute("data-job") === state.job);
+    });
+    Object.keys(gantt.rows).forEach(function (id) {
+      gantt.rows[id].g.classList.toggle("dim", !!state.team && state.team !== id);
+    });
+    gantt.windows.textContent = "";
+    var j = state.job && job[state.job];
+    if (!j) return;
+    var rows = j.served ? [j.served.team] : [];
+    rows.forEach(function (id) {
+      var row = gantt.rows[id];
+      j.windows.forEach(function (w) {
+        gantt.windows.appendChild(s("rect", { x: gantt.x(w[0]), y: row.y + 1, width: gantt.x(w[1]) - gantt.x(w[0]), height: row.h - 2, class: "window" }));
+      });
+    });
+  }
+
+  // ------------------------------------------------------------------ details and lists
+  function selectJob(id, scroll) {
+    state.job = id; state.team = null;
+    var j = job[id], d = document.getElementById("details");
+    d.textContent = "";
+    d.appendChild(h("h3", { text: "Job " + id }));
+    var where = j.served
+      ? h("span", null, ["team ", teamLink(j.served.team), ", " + clock(j.served.start) + "–" + clock(j.served.end)])
+      : "not served";
+    d.appendChild(kv([
+      ["Served", where], ["Priority", String(j.priority)], ["Service", j.service_minutes + " min"],
+      ["Time windows", windows(j.windows)], ["Skills needed", skills(j.skills)],
+      ["Type", j.attributes.type], ["Customer", j.attributes.customer_type + ", " + j.attributes.dwelling +
+        ", " + j.attributes.devices + " device" + (j.attributes.devices === 1 ? "" : "s")],
+      ["Value", j.value_eur + " EUR (descriptive, in no objective)"], ["Location", j.lat.toFixed(5) + ", " + j.lon.toFixed(5)],
+    ]));
+    if (j.served && !j.windows.length) d.appendChild(h("p", { cls: "quiet", text: "No time window: any time in the shift." }));
+    restyleMap(); restyleTimeline();
+    if (map) map.panTo([j.lat, j.lon]);
+    if (scroll) document.getElementById("map").scrollIntoView({ behavior: "smooth" });
+  }
+  function selectTeam(id, scroll) {
+    state.team = id; state.job = null;
+    var t = team[id], r = route[id], d = document.getElementById("details");
+    d.textContent = "";
+    d.appendChild(h("h3", { text: "Team " + id }));
+    var lead = tech[t.members[0]];
+    d.appendChild(kv([
+      ["Members", t.members.join(", ")],
+      ["Skills", Array.from(new Set([].concat.apply([], t.members.map(function (m) { return tech[m].skills; })))).sort().join(", ")],
+      ["Shift (lead)", span(lead.shift)],
+      ["Breaks", t.members.map(function (m) { return m + " " + (tech[m].breaks.map(span).join(", ") || "none"); }).join("; ")],
+      ["Stops", r ? String(r.stops.length) : "0"],
+      ["Service", r ? num(r.service_minutes) + " min" : "–"],
+      ["Travel", r ? num(r.travel_s) + " s, " + (r.distance_m / 1000).toFixed(1) + " km" : "–"],
+      ["Back at", r ? clock(r.back.arrive) : "–"],
+    ]));
+    if (r) {
+      var tb = h("tbody");
+      r.stops.forEach(function (st) {
+        var j = job[st.job];
+        tb.appendChild(h("tr", null, [h("td", null, [jobLink(st.job)]), h("td", { text: clock(st.arrive) }),
+          h("td", { text: clock(st.start) + "–" + clock(st.end) }), h("td", { text: "P" + j.priority }),
+          h("td", { text: windows(j.windows) })]));
+      });
+      d.appendChild(h("div", { cls: "table-wrap" }, [h("table", null, [h("thead", null, [h("tr", null,
+        ["Job", "Arrive", "Service", "Prio", "Windows"].map(function (c) { return h("th", { text: c }); }))]), tb])]));
+    }
+    restyleMap(); restyleTimeline();
+    if (map && routeLines[id]) map.fitBounds(routeLines[id].getBounds(), { padding: [24, 24] });
+    if (scroll) document.getElementById("map").scrollIntoView({ behavior: "smooth" });
+  }
+  function drawUnserved() {
+    var host = document.getElementById("unserved-list");
+    var left = data.jobs.filter(function (j) { return !j.served; });
+    left.sort(function (a, b) { return b.priority - a.priority || b.service_minutes - a.service_minutes || (a.id < b.id ? -1 : 1); });
+    var minutes = left.reduce(function (n, j) { return n + j.service_minutes; }, 0);
+    host.appendChild(h("p", { cls: "quiet", text: left.length + " jobs, " + num(minutes) + " service minutes, " +
+      left.filter(function (j) { return j.priority === 3; }).length + " of them priority 3. Sorted by priority, then service minutes." }));
+    var tb = h("tbody");
+    left.forEach(function (j) {
+      tb.appendChild(h("tr", null, [h("td", null, [jobLink(j.id)]), h("td", { cls: "num", text: String(j.priority) }),
+        h("td", { cls: "num", text: String(j.service_minutes) }), h("td", { text: windows(j.windows) }),
+        h("td", { text: skills(j.skills) }), h("td", { text: j.attributes.type })]));
+    });
+    host.appendChild(h("div", { cls: "table-wrap" }, [h("table", null, [h("thead", null, [h("tr", null,
+      [["Job"], ["Priority", "num"], ["Service min", "num"], ["Time windows"], ["Skills"], ["Type"]].map(function (c) {
+        return h("th", { text: c[0], cls: c[1] || "" }); }))]), tb])]));
+  }
+
+  // ------------------------------------------------------------------ start
+  document.getElementById("color-by").addEventListener("change", function (e) { state.color = e.target.value; restyleMap(); });
+  document.getElementById("only-unserved").addEventListener("change", function (e) { state.unservedOnly = e.target.checked; restyleMap(); });
+  document.getElementById("only-p3").addEventListener("change", function (e) { state.p3Only = e.target.checked; restyleMap(); });
+  if (window.L) initLeaflet(); else initStatic();
+  drawTimeline();
+  drawUnserved();
+  restyleMap();
+  var resizeTimer = null;
+  window.addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () { drawTimeline(); restyleTimeline(); }, 200);
+  });
+  if (window.matchMedia) window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", function () {
+    drawTimeline(); restyleMap(); restyleTimeline();
+  });
+})();
+
+</script>
+</body>
+</html>
